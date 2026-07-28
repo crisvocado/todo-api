@@ -96,6 +96,11 @@ def update_todo(todo_id: int, data: TodoUpdate):
     return dict(todo)
 
 
+@app.post("/trigger-error", status_code=500)
+def trigger_error():
+    raise RuntimeError("Test server error: something broke in the TODO API!")
+
+
 @app.delete("/todos/{todo_id}", status_code=204)
 def delete_todo(todo_id: int):
     conn = get_db()
