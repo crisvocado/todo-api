@@ -100,6 +100,7 @@ def update_todo(todo_id: int, data: TodoUpdate):
 def trigger_error():
     import logging
     logger = logging.getLogger("todo-api")
+    logger.info("Log recibido - trigger-error endpoint called")
     logger.error("Test server error: something broke in the TODO API!")
     raise RuntimeError("Test server error: something broke in the TODO API!")
 
