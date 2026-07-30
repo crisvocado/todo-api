@@ -96,13 +96,13 @@ def update_todo(todo_id: int, data: TodoUpdate):
     return dict(todo)
 
 
-@app.post("/trigger-error", status_code=500)
+@app.post("/trigger-error")
 def trigger_error():
     import logging
     logger = logging.getLogger("todo-api")
     logger.info("Log recibido - trigger-error endpoint called")
     logger.error("Test server error: something broke in the TODO API!")
-    raise RuntimeError("Test server error: something broke in the TODO API!")
+    return {"status": "ok", "message": "Error logged server-side"}
 
 
 @app.delete("/todos/{todo_id}", status_code=204)
