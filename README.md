@@ -1,3 +1,3 @@
 # TODO API
 
-Simple backend API for testing and webhook verification.
+Simple backend API for testing.
