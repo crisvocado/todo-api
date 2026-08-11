@@ -1,4 +1,3 @@
-import persea_logger
 import sqlite3
 from contextlib import asynccontextmanager
 
