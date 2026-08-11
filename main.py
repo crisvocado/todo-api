@@ -1,6 +1,8 @@
 import sqlite3
 from contextlib import asynccontextmanager
 
+import persea_logger
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -99,8 +101,8 @@ def update_todo(todo_id: int, data: TodoUpdate):
 def trigger_error():
     import logging
     logger = logging.getLogger("todo-api")
-    logger.info("Log recibido - trigger-error endpoint called")
-    return {"status": "ok", "message": "Log received server-side"}
+    logger.error("Test server error: something broke in the TODO API!")
+    return {"status": "ok", "message": "Error logged server-side"}
 
 
 @app.delete("/todos/{todo_id}", status_code=204)
