@@ -68,6 +68,11 @@ def list_todos():
     return [dict(row) for row in rows]
 
 
+def _slug(title: str) -> str:
+    """Search key for the todo: lowercase, ascii, spaces as hyphens."""
+    return title.strip().lower().replace(" ", "-").encode("ascii").decode("ascii")
+
+
 @app.post("/todos", status_code=201)
 def create_todo(data: TodoCreate):
     conn = get_db()
@@ -75,7 +80,9 @@ def create_todo(data: TodoCreate):
     conn.commit()
     todo = conn.execute("SELECT * FROM todos WHERE id = ?", (cursor.lastrowid,)).fetchone()
     conn.close()
-    return dict(todo)
+    result = dict(todo)
+    result["slug"] = _slug(result["title"])
+    return result
 
 
 @app.patch("/todos/{todo_id}")
