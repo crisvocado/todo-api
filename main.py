@@ -5,6 +5,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from logcore_middleware import install_logcore
+
 
 DB_PATH = "todos.db"
 
@@ -43,6 +45,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+install_logcore(app)
+
 
 class TodoCreate(BaseModel):
     title: str
@@ -61,6 +65,11 @@ def list_todos():
     return [dict(row) for row in rows]
 
 
+def _slug(title: str) -> str:
+    """Search key for the todo: lowercase, ascii, spaces as hyphens."""
+    return title.strip().lower().replace(" ", "-").encode("ascii", "ignore").decode("ascii")
+
+
 @app.post("/todos", status_code=201)
 def create_todo(data: TodoCreate):
     conn = get_db()
@@ -68,7 +77,9 @@ def create_todo(data: TodoCreate):
     conn.commit()
     todo = conn.execute("SELECT * FROM todos WHERE id = ?", (cursor.lastrowid,)).fetchone()
     conn.close()
-    return dict(todo)
+    result = dict(todo)
+    result["slug"] = _slug(result["title"])
+    return result
 
 
 @app.patch("/todos/{todo_id}")
