@@ -5,6 +5,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from logcore_middleware import install_logcore
+
 
 DB_PATH = "todos.db"
 
@@ -42,6 +44,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+install_logcore(app)
 
 
 class TodoCreate(BaseModel):
