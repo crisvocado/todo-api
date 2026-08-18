@@ -67,7 +67,7 @@ def list_todos():
 
 def _slug(title: str) -> str:
     """Search key for the todo: lowercase, ascii, spaces as hyphens."""
-    return title.strip().lower().replace(" ", "-").encode("ascii").decode("ascii")
+    return title.strip().lower().replace(" ", "-").encode("ascii", "ignore").decode("ascii")
 
 
 @app.post("/todos", status_code=201)
