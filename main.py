@@ -5,6 +5,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from logcore_middleware import LogcoreMiddleware
+
 
 DB_PATH = "todos.db"
 
@@ -35,6 +37,10 @@ async def lifespan(app):
 
 
 app = FastAPI(title="TODO API", lifespan=lifespan)
+
+# Registered before CORS: add_middleware builds the stack in reverse, so this
+# one ends up inside and sees the exceptions the routes actually raise.
+app.add_middleware(LogcoreMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
