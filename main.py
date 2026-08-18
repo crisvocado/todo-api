@@ -1,4 +1,5 @@
 import sqlite3
+import unicodedata
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
@@ -69,7 +70,8 @@ def list_todos():
 
 def _slug(title: str) -> str:
     """Search key for the todo: lowercase, ascii, spaces as hyphens."""
-    return title.strip().lower().replace(" ", "-").encode("ascii").decode("ascii")
+    normalized = unicodedata.normalize("NFKD", title)
+    return normalized.strip().lower().replace(" ", "-").encode("ascii", "ignore").decode("ascii")
 
 
 @app.post("/todos", status_code=201)
