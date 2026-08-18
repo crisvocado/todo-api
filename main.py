@@ -5,6 +5,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from logcore_middleware import LogcoreMiddleware
+
 
 DB_PATH = "todos.db"
 
@@ -35,6 +37,10 @@ async def lifespan(app):
 
 
 app = FastAPI(title="TODO API", lifespan=lifespan)
+
+# Registered before CORS, which makes it the inner layer: CORS stays outermost
+# and unchanged, while this one wraps the routes and sees what escapes them.
+app.add_middleware(LogcoreMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
