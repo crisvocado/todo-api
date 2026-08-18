@@ -5,6 +5,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from logcore_middleware import LogcoreMiddleware
+
 
 DB_PATH = "todos.db"
 
@@ -42,6 +44,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Added last, so it is the outermost user middleware and sees every exception
+# that escapes a route handler.
+app.add_middleware(LogcoreMiddleware)
 
 
 class TodoCreate(BaseModel):
