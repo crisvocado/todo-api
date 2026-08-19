@@ -5,6 +5,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from logcore_middleware import LogcoreMiddleware
+
 
 DB_PATH = "todos.db"
 
@@ -36,6 +38,11 @@ async def lifespan(app):
 
 app = FastAPI(title="TODO API", lifespan=lifespan)
 
+# Registrado el primero, y add_middleware inserta en orden inverso: queda el
+# más interno de la cadena, pegado al router. Ahí ve la excepción tal y como
+# sale del endpoint, antes de que ningún otro middleware la transforme.
+app.add_middleware(LogcoreMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -61,6 +68,11 @@ def list_todos():
     return [dict(row) for row in rows]
 
 
+def _slug(title: str) -> str:
+    """Search key for the todo: lowercase, ascii, spaces as hyphens."""
+    return title.strip().lower().replace(" ", "-").encode("ascii").decode("ascii")
+
+
 @app.post("/todos", status_code=201)
 def create_todo(data: TodoCreate):
     conn = get_db()
@@ -68,7 +80,9 @@ def create_todo(data: TodoCreate):
     conn.commit()
     todo = conn.execute("SELECT * FROM todos WHERE id = ?", (cursor.lastrowid,)).fetchone()
     conn.close()
-    return dict(todo)
+    result = dict(todo)
+    result["slug"] = _slug(result["title"])
+    return result
 
 
 @app.patch("/todos/{todo_id}")
