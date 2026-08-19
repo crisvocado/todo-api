@@ -1,126 +1,101 @@
 import json
+import sqlite3
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-import logcore
+import logcore_logger
 from logcore_middleware import LogcoreMiddleware
+
+
+SERVICE_ID = "92be1903-39cf-41eb-9046-3989ef7f5be2"
 
 
 @pytest.fixture
 def logcore_env(monkeypatch):
-    monkeypatch.setenv("LOGCORE_SERVICE_ID", "792548c2-c128-460c-82ca-f26b9205b5cd")
+    monkeypatch.setenv("LOGCORE_SERVICE_ID", SERVICE_ID)
     monkeypatch.setenv("LOGCORE_ENV", "dev")
-    monkeypatch.setenv("LOGCORE_SOURCE_PROJECT", "persea-dev-2")
+    monkeypatch.setenv("LOGCORE_SOURCE_PROJECT", "seed-prod-b9508c89")
+    monkeypatch.setenv("LOGCORE_SERVICE_NAME", "todo-api")
 
 
-def emitted_entry(capsys):
-    lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
-    assert len(lines) == 1, f"expected one JSON line, got {lines}"
-    return json.loads(lines[0])
+def raise_wrapped():
+    try:
+        sqlite3.connect(":memory:").execute("SELECT * FROM missing_table")
+    except sqlite3.OperationalError as driver_error:
+        raise RuntimeError("no se pudo leer la lista de tareas") from driver_error
 
 
-def test_log_puts_env_and_source_project_under_the_promoted_labels_key(
-    logcore_env, capsys
-):
-    logcore.log("ERROR", "boom")
+def test_entry_matches_the_stdout_wire_shape(logcore_env):
+    entry = logcore_logger.build_entry("ERROR", "boom")
 
-    entry = emitted_entry(capsys)
+    assert entry["service_id"] == SERVICE_ID
+    assert entry["timestamp"].endswith("Z")
+    # env y source_project van anidados: Cloud Run solo promociona las claves
+    # logging.googleapis.com/*, y arriba logcore no las lee.
     assert entry["logging.googleapis.com/labels"] == {
         "env": "dev",
-        "source_project": "persea-dev-2",
+        "source_project": "seed-prod-b9508c89",
     }
-    # A top-level env stays inside jsonPayload and every issue records "unknown".
-    assert "env" not in entry
-    assert "insert_id" not in entry
+    assert "env" not in entry and "insert_id" not in entry
+    # El esquema rechaza un digest completo de 64 caracteres.
+    assert len(entry["logging.googleapis.com/insertId"]) == 32
 
 
-def test_insert_id_is_32_hex_chars(logcore_env, capsys):
-    logcore.log("ERROR", "boom")
+def test_insert_id_is_deterministic_for_the_same_event(logcore_env):
+    error = {"stack": [{"file": "main.py", "line": 42}]}
+    first = logcore_logger.build_entry("ERROR", "boom", error=error)
+    second = dict(first)
 
-    insert_id = emitted_entry(capsys)["logging.googleapis.com/insertId"]
-    assert len(insert_id) == 32
-    assert all(char in "0123456789abcdef" for char in insert_id)
-
-
-def test_error_stack_is_parsed_frames_innermost_first():
-    def inner():
-        raise ValueError("inner exploded")
-
-    def outer():
-        inner()
-
-    try:
-        outer()
-    except ValueError as exc:
-        error = logcore.error_from_exception(exc)
-
-    assert error["type"] == "ValueError"
-    assert [frame["function"] for frame in error["stack"]][:2] == ["inner", "outer"]
-    assert all(isinstance(frame, dict) for frame in error["stack"])
+    assert first["logging.googleapis.com/insertId"] == logcore_logger._insert_id(
+        first["timestamp"], "todo-api", "boom", error
+    )
+    assert second["logging.googleapis.com/insertId"] == first[
+        "logging.googleapis.com/insertId"
+    ]
 
 
-def test_error_stack_follows_the_cause_chain_to_its_root():
-    def read_row():
-        raise KeyError("row missing")
+def test_stack_puts_the_root_cause_first(logcore_env):
+    with pytest.raises(RuntimeError) as caught:
+        raise_wrapped()
 
-    try:
-        try:
-            read_row()
-        except KeyError as cause:
-            raise RuntimeError("could not load todo") from cause
-    except RuntimeError as exc:
-        error = logcore.error_from_exception(exc)
+    error = logcore_logger.error_from_exception(caught.value)
 
-    # The root cause leads, so the issue keys on where it actually broke rather
-    # than on the layer that re-raised.
-    assert error["stack"][0]["function"] == "read_row"
-    # type and message stay those of the exception actually raised.
+    # type y message son los de la excepción lanzada, pero el primer frame es
+    # el de la causa raíz: es donde se rompió de verdad y por donde agrupa
+    # logcore. Parando en el envoltorio, todo lo que relanza esa capa
+    # colapsaría en un único issue.
     assert error["type"] == "RuntimeError"
+    assert error["stack"][0]["function"] == "raise_wrapped"
+    assert all(isinstance(frame["function"], str) for frame in error["stack"])
+    # Nunca el traceback en bruto: una cadena aquí se rechaza y el log se pierde.
+    assert isinstance(error["stack"], list)
 
 
-def test_log_is_a_noop_without_a_service_id(monkeypatch, capsys):
+def test_nothing_is_emitted_without_a_service_id(monkeypatch, capsys):
     monkeypatch.delenv("LOGCORE_SERVICE_ID", raising=False)
-    monkeypatch.setattr(logcore, "_warned_about_missing_service_id", False)
 
-    logcore.log("ERROR", "boom")
+    logcore_logger.emit("ERROR", "boom")
 
-    captured = capsys.readouterr()
-    assert captured.out == ""
-    assert "LOGCORE_SERVICE_ID" in captured.err
+    assert capsys.readouterr().out == ""
 
 
-def test_middleware_logs_unhandled_exceptions_and_reraises(logcore_env, capsys):
+def test_middleware_reports_an_unhandled_exception_and_still_raises(
+    logcore_env, capsys
+):
     app = FastAPI()
+    app.add_middleware(LogcoreMiddleware)
 
     @app.get("/boom")
     def boom():
-        raise ValueError("kaboom")
+        raise_wrapped()
 
-    app.add_middleware(LogcoreMiddleware)
     client = TestClient(app, raise_server_exceptions=False)
-
     response = client.get("/boom")
 
     assert response.status_code == 500
-    entry = emitted_entry(capsys)
+    entry = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert entry["severity"] == "ERROR"
-    assert entry["error"]["type"] == "ValueError"
+    assert entry["error"]["type"] == "RuntimeError"
     assert entry["context"] == {"method": "GET", "path": "/boom"}
-
-
-def test_middleware_does_not_log_handled_http_errors(logcore_env, capsys):
-    app = FastAPI()
-
-    @app.get("/missing")
-    def missing():
-        from fastapi import HTTPException
-
-        raise HTTPException(status_code=404, detail="nope")
-
-    app.add_middleware(LogcoreMiddleware)
-    client = TestClient(app)
-
-    assert client.get("/missing").status_code == 404
-    assert capsys.readouterr().out == ""

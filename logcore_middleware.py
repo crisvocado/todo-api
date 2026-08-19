@@ -1,35 +1,34 @@
-"""ASGI middleware that reports unhandled exceptions to logcore."""
+"""Middleware de FastAPI que reporta a logcore las excepciones no manejadas."""
 
-from logcore import log_exception
+from starlette.middleware.base import BaseHTTPMiddleware
+
+from logcore_logger import log_exception
 
 
-class LogcoreMiddleware:
-    """Logs any exception escaping the app, then re-raises it untouched.
+class LogcoreMiddleware(BaseHTTPMiddleware):
+    """Registra la excepción y la relanza para que FastAPI responda 500.
 
-    Pure ASGI rather than BaseHTTPMiddleware: it adds no buffering to responses
-    and sees exceptions exactly as they propagate. HTTPException never reaches
-    it, because Starlette's exception middleware turns those into responses
-    further in — which is what we want, a 404 is not an error to report.
+    Las HTTPException no llegan hasta aquí: Starlette ya las ha convertido en
+    respuesta antes de salir del router, que es justo lo que queremos —un 404
+    esperado no es un error que reportar.
     """
 
-    def __init__(self, app):
-        self.app = app
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] != "http":
-            await self.app(scope, receive, send)
-            return
-
+    async def dispatch(self, request, call_next):
         try:
-            await self.app(scope, receive, send)
-        except Exception as exc:
-            method = scope.get("method", "")
-            path = scope.get("path", "")
-            # Method and path only. The body, headers and query string carry
-            # user data and credentials, and never belong in a log.
+            return await call_next(request)
+        except Exception as exception:
             log_exception(
-                exc,
-                message=f"Unhandled exception on {method} {path}",
-                context={"method": method, "path": path},
+                exception,
+                context={
+                    "method": request.method,
+                    # Solo la ruta: la query puede llevar datos personales.
+                    "path": request.url.path,
+                },
+                # El header lo pone Cloud Run con el formato
+                # "TRACE_ID/SPAN_ID;o=1"; a logcore le interesa el trace.
+                trace_id=(
+                    request.headers.get("x-cloud-trace-context", "").split("/")[0]
+                    or None
+                ),
             )
             raise

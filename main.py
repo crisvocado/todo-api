@@ -39,6 +39,11 @@ async def lifespan(app):
 
 app = FastAPI(title="TODO API", lifespan=lifespan)
 
+# Registrado el primero, y add_middleware inserta en orden inverso: queda el
+# más interno de la cadena, pegado al router. Ahí ve la excepción tal y como
+# sale del endpoint, antes de que ningún otro middleware la transforme.
+app.add_middleware(LogcoreMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
