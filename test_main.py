@@ -27,3 +27,15 @@ def test_create_todo_with_unicode_title_generates_slug():
     assert data["slug"] == "comprar-cafe"
 
 
+def test_create_todo_with_unicode_and_whitespace_slug():
+    from main import init_db
+    init_db()
+    response = client.post("/todos", json={"title": "  Comprar   café  "})
+    assert response.status_code == 201
+    data = response.json()
+    assert data["title"] == "  Comprar   café  "
+    assert "slug" in data
+    assert data["slug"] == "comprar-cafe"
+
+
+
