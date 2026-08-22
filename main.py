@@ -75,9 +75,9 @@ def list_todos():
 
 def _slug(title: str) -> str:
     """Search key for the todo: lowercase, ascii, spaces as hyphens."""
-    normalized = unicodedata.normalize("NFKD", title)
+    normalized = unicodedata.normalize("NFKD", title.casefold())
     ascii_title = normalized.encode("ascii", "ignore").decode("ascii")
-    return ascii_title.strip().lower().replace(" ", "-")
+    return "-".join(ascii_title.split())
 
 
 @app.post("/todos", status_code=201)
